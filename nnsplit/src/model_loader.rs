@@ -4,6 +4,7 @@ use std::fs;
 use std::io::Cursor;
 use std::path::PathBuf;
 use thiserror::Error;
+use std::io::Write;
 
 lazy_static! {
     static ref MODEL_DATA: HashMap<&'static str, &'static str> = {
@@ -55,27 +56,19 @@ impl From<std::io::Error> for ResourceError {
 pub fn get_resource(
     model_name: &str,
     file: &str,
-) -> Result<(impl std::io::Read, Option<PathBuf>), ResourceError> {
+    cache_path: &PathBuf,
+) -> Result<(impl std::io::Read, PathBuf), ResourceError> {
     let base_url = url::Url::parse(MODEL_DATA.get(model_name).ok_or_else(|| {
         ResourceError::ModelNotFoundError {
             model_name: model_name.to_owned(),
         }
     })?)?;
     let url = base_url.join(file)?;
-    let mut cache_path: Option<PathBuf> = None;
-
-    // try to find a file at which to cache the data
-    if let Some(project_dirs) = directories::ProjectDirs::from("", "", "nnsplit") {
-        let cache_dir = project_dirs.cache_dir();
-
-        cache_path = Some(cache_dir.join(model_name).join(file));
-    }
+    let cache_path  = cache_path.join(model_name).join(file);
 
     // if the file can be read, the data is already cached ...
-    if let Some(path) = &cache_path {
-        if let Ok(bytes) = fs::read(path) {
-            return Ok((Cursor::new(bytes), cache_path));
-        }
+    if let Ok(bytes) = fs::read(&cache_path) {
+        return Ok((Cursor::new(bytes), cache_path.clone()));
     }
 
     // ... otherwise, request the data from the URL ...
@@ -89,10 +82,11 @@ pub fn get_resource(
         .into_bytes();
 
     // ... and then cache the data at the provided file, if one was found
-    if let Some(path) = &cache_path {
-        fs::create_dir_all(path.parent().unwrap())?;
-        fs::write(path, &bytes)?;
-    }
+    std::fs::create_dir_all(cache_path.parent().unwrap())?;
+    let mut file = std::fs::File::create(&cache_path)?;
+    file.write_all(&bytes)?;
 
     Ok((Cursor::new(bytes), cache_path))
 }
+
+

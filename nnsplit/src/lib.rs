@@ -6,12 +6,14 @@
 #[macro_use]
 extern crate quickcheck_macros;
 
+use directories::ProjectDirs;
 use lazy_static::lazy_static;
 use ndarray::prelude::*;
 use serde_derive::{Deserialize, Serialize};
 use std::cmp;
 use std::collections::HashMap;
 use std::ops::Range;
+use std::path::PathBuf;
 
 /// Backend to run models using tch-rs.
 #[cfg(feature = "tract-backend")]
@@ -222,15 +224,18 @@ pub struct NNSplitOptions {
     /// How much to zero pad the text on both sides.
     #[serde(default = "NNSplitOptions::default_padding")]
     pub padding: usize,
+    /// Batch size to use.
+    #[serde(alias = "batchSize", default = "NNSplitOptions::default_batch_size")]
+    pub batch_size: usize,
     /// Total length will be padded until it is divisible by this number. Allows some additional optimizations.
     #[serde(
         alias = "paddingDivisor",
         default = "NNSplitOptions::default_length_divisor"
     )]
     pub length_divisor: usize,
-    /// Batch size to use.
-    #[serde(alias = "batchSize", default = "NNSplitOptions::default_batch_size")]
-    pub batch_size: usize,
+    /// cache directory for downloaded model
+    #[serde(default = "NNSplitOptions::default_cache_dir")]
+    pub cache_dir: PathBuf,
 }
 
 impl NNSplitOptions {
@@ -253,9 +258,32 @@ impl NNSplitOptions {
     fn default_batch_size() -> usize {
         256
     }
-
+    
     fn default_length_divisor() -> usize {
         2
+    }
+
+    fn default_cache_dir() -> PathBuf {
+        if let Some(project_dirs) = ProjectDirs::from("", "", "nnsplit") {
+            project_dirs.cache_dir().to_path_buf()
+        } else {
+            PathBuf::new()
+        }
+    }
+}
+
+impl NNSplitOptions {
+    /// Method to create a new NNSplitOptions with some or all fields modified
+    pub fn copy_with(&self, threshold: Option<f32>, stride: Option<usize>, max_length: Option<usize>, padding: Option<usize>, length_divisor: Option<usize>, batch_size: Option<usize>, cache_dir: Option<&str>) -> NNSplitOptions {
+        NNSplitOptions {
+            threshold: threshold.unwrap_or(self.threshold),
+            stride: stride.unwrap_or(self.stride),
+            max_length: max_length.unwrap_or(self.max_length),
+            padding: padding.unwrap_or(self.padding),
+            batch_size: batch_size.unwrap_or(self.batch_size),
+            length_divisor: length_divisor.unwrap_or(self.length_divisor),
+            cache_dir: cache_dir.map_or(self.cache_dir.clone(), PathBuf::from),
+        }
     }
 }
 
@@ -267,10 +295,12 @@ impl Default for NNSplitOptions {
             max_length: NNSplitOptions::default_max_length(),
             padding: NNSplitOptions::default_padding(),
             batch_size: NNSplitOptions::default_batch_size(),
+            cache_dir: NNSplitOptions::default_cache_dir(),
             length_divisor: NNSplitOptions::default_length_divisor(),
         }
     }
 }
+
 
 /// The logic by which texts are split.
 pub struct NNSplitLogic {

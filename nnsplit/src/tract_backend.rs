@@ -112,9 +112,8 @@ impl NNSplit {
     /// Loads a built-in model. From the local cache or from the internet if it is not cached.
     #[cfg(feature = "model-loader")]
     pub fn load(model_name: &str, options: NNSplitOptions) -> Result<Self, Box<dyn Error>> {
-        let mut model_data = crate::model_loader::get_resource(model_name, "model.onnx")?.0;
-        let model_proto = onnx().proto_model_for_read(&mut model_data)?;
-
+        let mut model_data = crate::model_loader::get_resource(model_name, "model.onnx", &options.cache_dir)?.0;
+        let model_proto = onnx().proto_model_for_read(&mut model_data)?; 
         NNSplit::from_model(model_proto, options)
     }
 
